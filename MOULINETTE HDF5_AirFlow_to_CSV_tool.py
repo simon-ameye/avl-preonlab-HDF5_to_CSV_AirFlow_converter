@@ -1,55 +1,76 @@
 import h5py as h5
 import numpy as np
-import tkinter as tk
-from tkinter import filedialog
-root = tk.Tk();
-root.withdraw();
+import glob
 
-print('This tool will allow you to open HDF files and to create XYZUVW file for PreonLab')
+#User parameters
+auto = 1 #0 if you want to manually select keys and files locations. 1 if you want the code to be automatic.
+position_keywords = ["Geometry", "geometry"] #in case of auto run, keywords are used to select velocity and geometry keys based on their names
+velocity_keywords = ["Velocity", "velocity"]
 
-#File location
-print('Please select the HDF5 file using the dialog window')
-file_path = filedialog.askopenfilename();
-file = h5.File(file_path, 'a');
+#Code
+def file_location(auto):
+    if auto == 0:
+        #File location
+        print('Please select the HDF5 file using the dialog window')
+        root = tk.Tk();
+        root.withdraw();
+        return filedialog.askopenfilename()
+    else:
+        return glob.glob('*.h5')[0]
 
-#HDF5 file explorator. Please use the explorator to
-#- select the right nodes coordinates file
-#- select the right velocity file
+def key_selection(auto, all_child_keys, position_keywords, velocity_keywords):
+    print('Here are the available keys in your file :')
+    for i in range(0,len(all_child_keys)):
+        print(i, ": ", all_child_keys[i])
+    if auto == 0:
+        selected_keys = []
+        selected_keys.append(all_child_keys[int(input('Enter the number for coordinates key :'))])
+        selected_keys.append(all_child_keys[int(input('Enter the number for velocities key :'))])
+    else:
+        selected_keys = []
+        for key in all_child_keys:
+            if any(word in key for word in position_keywords):
+                selected_keys.append(key)
+        for key in all_child_keys:
+            if any(word in key for word in velocity_keywords):
+                selected_keys.append(key)
+    print('Here are the selected keys :')
+    for key in selected_keys:
+        print(key)
+    return selected_keys
 
+def file_destination(auto):
+    if auto == 0:
+        root = tk.Tk();
+        root.withdraw();
+        print('Select now the path for file saving')
+        file_path =  filedialog.asksaveasfilename(initialdir = "file_path",title = "Select file",filetypes = (("CSV files","*.CSV"),("all files","*.*"))) + ".csv"
+    else :
+        file_path =  glob.glob('*.h5')[0]
+    if not file_path.endswith(('.csv','.xls','.txt','.dat')):
+        file_path += '.csv'
+    return(file_path)
+
+print('This tool will allow you to open HDF5 files and to create XYZUVW file for PreonLab')
+if auto == 0:
+    import tkinter as tk
+    from tkinter import filedialog
+
+file = h5.File(file_location(auto), 'a')
 all_child_keys = []
 file.visit(all_child_keys.append)
-all_child_keys_num = range(0,len(all_child_keys))
-
-print('Here are the available keys in your file :')
-for i in range(0,len(all_child_keys)):
-    print(i, ": ", all_child_keys[i])
-
-coordinates_num = int(input('Enter the number for coordinates key :'))  
-coordinates_name = all_child_keys[coordinates_num]
-velocities_num = int(input('Enter the number for velocities key :'))  
-velocities_name = all_child_keys[velocities_num]
-#Coordinates and velocity files names
-node_coord = file[coordinates_name]
-velocity = file[velocities_name]
+selected_keys = key_selection(auto, all_child_keys, position_keywords, velocity_keywords)
+if np.size(selected_keys) != 2:
+    print("ERROR : Number of selected keys is not 2 ! Please check key words used to select keys in your H5 file")
 
 #Concatenate coordinates and speed
-result = np.concatenate((node_coord,velocity),axis=1)
+try : 
+    result = np.concatenate((file[selected_keys[0]],file[selected_keys[1]]),axis=1)
+except : 
+    print("ERROR : Position and velocity keys won't concatenant ! Please check their size or that their names are expected")
 
-#The result file will be size_ratio times smaller
-size_ratio = int(input('Do you want to reduce dataset size ? Enter 1 to keep all data. Larger value will divide dataset size by the value :'))
-
-root = tk.Tk();
-root.withdraw();
-print('Select now the path for file saving')
-file_path =  filedialog.asksaveasfilename(initialdir = "file_path",title = "Select file",filetypes = (("CSV files","*.CSV"),("all files","*.*")))
-
+file_path =  file_destination(auto)
 print('Writing CSV file... This can take up to 1 hour')
-#   Writing the smaller result file """
-
-result_size = np.size(result,0)
-result_small = result[np.arange(0,result_size,size_ratio) ,  :]
 NAMES = np.array(['X','Y','Z','U','V','W']);
-result_small = np.vstack((NAMES,result_small))
-
-np.savetxt(file_path, result_small, delimiter="," , fmt="%s")
+np.savetxt(file_path, np.vstack((NAMES, result)), delimiter="," , fmt="%s")
 print('Done')
